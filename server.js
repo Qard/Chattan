@@ -7,6 +7,15 @@ var express = require('express')
 	, creds = require('./creds')
 	, file = require('fs');
 
+// Create generic MOTD.
+var motd = 'For help with using CHATTAN!! type /help.';
+
+/************************
+ *                      *
+ *    Setup Database    *
+ *                      *
+ ************************/
+
 // Create Cloudant CouchDB connection.
 var couch = new(cradle.Connection)({
 	host: 'chattan.cloudant.com'
@@ -23,40 +32,25 @@ var db = {
 	, blacklist: couch.database('blacklist')
 };
 
-// Load blacklist into array. It probably won't eat too much memory.
-// I'd rather load it now than make the users wait on connection.
-var blacklist = [];
-db.blacklist.all(function(err, res){
-	if ( ! err) {
-		for (var i in res) {
-			blacklist.push(res[i].id);
-		}
+// Create some views, if they don't exist already.
+db.users.get('_design/users', function(err) {
+	if (err) {
+		db.users.save('_design/users', {
+			all: {
+				map: function (doc) {
+					emit(doc._id, doc);
+				}
+			},
+			loggedin: {
+				map: function (doc) {
+					if (doc.loggedin) {
+						emit(doc._id, doc);
+					}
+				}
+			}
+		});
 	}
 });
-
-// Create express server.
-var app = express.createServer();
-
-// Configure express to serve static files.
-app.configure(function(){
-	app.use(express.static(__dirname+'/static'));
-	app.use(express.router);
-});
-
-// Serve index.html from all URLs not already occupied by static content.
-app.get('*', function(req, res){
-	res.sendHeader(200, {"Content-Type": "text/html"});
-	file.readFile(__dirname+'/static/index.html', function(err, file) {
-		if (err) throw err;
-		res.send(file);
-	});
-});
-
-// Start listening.
-app.listen(8124);
-
-// Create generic MOTD.
-var motd = 'For help with using CHATTAN!! type /help.';
 
 // If default users were supplied,
 // make sure they are in the database.
@@ -87,6 +81,50 @@ if (creds.users) {
 	}
 }
 
+// Load blacklist into array. It probably won't eat too much memory.
+// I'd rather load it now than make the users wait on connection.
+var blacklist = [];
+db.blacklist.all(function(err, res){
+	if ( ! err) {
+		for (var i in res) {
+			blacklist.push(res[i].id);
+		}
+	}
+});
+
+/************************
+ *                      *
+ *    Setup Express     *
+ *                      *
+ ************************/
+
+// Create express server.
+var app = express.createServer();
+
+// Configure express to serve static files.
+app.configure(function(){
+	app.use(express.static(__dirname+'/static'));
+	app.use(express.router);
+});
+
+// Serve index.html from all URLs not already occupied by static content.
+app.get('*', function(req, res){
+	res.sendHeader(200, {"Content-Type": "text/html"});
+	file.readFile(__dirname+'/static/index.html', function(err, file) {
+		if (err) throw err;
+		res.send(file);
+	});
+});
+
+// Start listening.
+app.listen(8124);
+
+/************************
+ *                      *
+ *    Helper Methods    *
+ *                      *
+ ************************/
+
 // Give banned users the boot.
 var isBanned = function(client) {
 	if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
@@ -98,7 +136,8 @@ var isBanned = function(client) {
 	}
 };
 
-var findUserInSocket = function(name) {
+// Find Socket.IO client by _id.
+var findClientByName = function(name) {
 	for (var i in socket.clients) {
 		if (socket.clients[i].user._id === name) {
 			return socket.clients[i].user;
@@ -106,6 +145,22 @@ var findUserInSocket = function(name) {
 	}
 	return false;
 };
+
+// Find Socket.IO client by IP Address.
+var findClientByIp = function(ip) {
+	for (var i in socket.clients) {
+		if (ip === socket.clients[i].connection.remoteAddress){
+			return socket.clients[i];
+		}
+	}
+	return false;
+};
+
+/************************
+ *                      *
+ *    Setup Socket.IO   *
+ *                      *
+ ************************/
 
 // Wrap express server
 var socket = socket.listen(app);
@@ -324,7 +379,7 @@ socket.on('connection', function(client){
 											client.send('No user by that name found.');
 										} else {
 											// Overwrite actual user data with temporary data.
-											var user = findUserInSocket(username);
+											var user = findClientByName(username);
 											user = doc;
 											socket.broadcast(username+' has been promoted to Administrator.');
 										}
@@ -350,16 +405,14 @@ socket.on('connection', function(client){
 									blacklist.push(doc.id);
 									socket.broadcast(doc.id+' has been banned!');
 									
-									// Loop through all current clients.
-									for (var i in socket.clients) {
-										// Get client IP.
-										var IP = socket.clients[i].connection.remoteAddress;
-										
-										// If the client IP matches the banned IP, notify and disconnect them.
-										if (doc.id == IP){
-											socket.clients[i].send('You have been banned!');
-											delete socket.clients[i];
-										}
+									// Find connected user with matching IP.
+									var user = findClientByIp(doc.id);
+									
+									// If the banned user is connected,
+									// boot them and close the connection.
+									if (user) {
+										user.send('You have been banned!');
+										delete user;
 									}
 								}
 							});
