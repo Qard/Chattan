@@ -227,6 +227,7 @@ socket.on('connection', function(client){
 							, '/login username password - Login to an existing named user account.'
 							, '/me message - Speak in third person.'
 							, '/motd - Repeat the Message of the Day.'
+							, '/who - Get a list of all users currently logged in.'
 						];
 						
 						// Add admin commands to list, if user is an admin.
@@ -454,9 +455,12 @@ socket.on('connection', function(client){
 					 */
 					case '/who':
 						client.send(
-							loggedIn.length
-								? 'Named users currently logged in: '+loggedIn.join(', ')
-								: 'No named users logged in currently.'
+							anonLoggedIn+' anonymous users'
+							(loggedIn.length
+								? ' and '+loggedIn.length+' named users ('+loggedIn.join(', ')+')'
+								: ''
+							)
+							+' currently logged in.'
 						);
 						break;
 					
