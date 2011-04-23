@@ -382,10 +382,16 @@ socket.on('connection', function(client){
 										if (err) {
 											client.send('No user by that name found.');
 										} else {
+											socket.broadcast(username+' has been promoted to Administrator.');
+											
 											// Overwrite actual user data with temporary data.
 											var user = findClientByName(username);
-											user = doc;
-											socket.broadcast(username+' has been promoted to Administrator.');
+											
+											// Only try to change live client status
+											// if that user is currently connected.
+											if (user) {
+												user.admin = true;
+											}
 										}
 									});
 								}
