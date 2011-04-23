@@ -49,7 +49,7 @@ app.get('*', function(req, res){
 	file.readFile(__dirname+'/static/index.html', function(err, file) {
 		if (err) throw err;
 		res.send(file);
-	}):
+	});
 });
 
 // Start listening.
