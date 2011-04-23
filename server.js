@@ -10,7 +10,7 @@ app.configure(function(){
 	app.use(express.static(__dirname+'/static'));
 });
 
-app.listen(8080);
+app.listen(8124, '127.0.0.1');
 
 // Wrap Connect server
 var socket = socket.listen(app);
