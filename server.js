@@ -73,8 +73,6 @@ if (creds.users) {
 				// Save to database.
 				db.users.save(i, creds.users[i], function(err, res){
 					if ( ! err) {
-						
-						console.log(res);
 						delete creds.users[i];
 					}
 				});

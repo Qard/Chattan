@@ -33,8 +33,6 @@
 				, secure: (window.location.protocol === 'https:')
 			});
 			
-			console.log(socket);
-			
 			// Set event handlers.
 			socket.on('disconnect', function() { output("Connection Closed."); });
 			//socket.on('connect', function() { output("Connection Established."); });
