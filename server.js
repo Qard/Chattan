@@ -28,7 +28,7 @@ socket.on('connection', function(client){
 	// Ignore blacklisted clients.
 	if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
 		client.send('You have been banned!');
-		client = null;
+		delete client;
 		return;
 	
 	// Execute our client management code for non-blacklisted clients.
@@ -49,7 +49,7 @@ socket.on('connection', function(client){
 		client.on('message', function(msg){
 			if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
 				client.send('You have been banned!');
-				client = null;
+				delete client;
 				return;
 			}
 
@@ -157,46 +157,43 @@ socket.on('connection', function(client){
 					
 					/**
 					 * Change the Message of the Day.
-					 * TODO: Make admin-only!
 					 * 
 					 * /motd This is the motd!
 					 */
 					case '/motd':
-						var admin = users[client.user.username];
-						if (admin){
-							if (admin.admin){
+						// We are only reading the MOTD, just respond.
+						if (parts.length === 1) {
+							client.send(motd);
+							
+						// We are changing the MOTD, we need to verify admin status.
+						} else {
+							var user = users[client.user.username];
+							if (user && user.admin){
 								motd = message;
 								socket.broadcast('MOTD changed to: '+motd);
 							} else {
-								client.send('You must be an admin to do that.');
+								client.send('You must be logged in as an admin to do that.');
 							}
-						} else {
-							client.send('You must be logged in to do that.');
 						}
 						break;
 					
 					/**
-					 * Change the Message of the Day.
-					 * TODO: Make admin-only!
+					 * Promote user to admin status.
 					 * 
-					 * /motd This is the motd!
+					 * /promote username
 					 */
 					case '/promote':
-						var admin = users[client.user.username];
-						if (admin){
-							if (admin.admin){
-								var user = users[parts[1]];
-								if (user){
-									user.admin = true;
-									socket.broadcast(parts[1]+' has been promoted to Administrator.');
-								} else {
-									client.send('No user by that name found.');
-								}
+						var user = users[client.user.username];
+						if (user && user.admin){
+							var user = users[parts[1]];
+							if (user){
+								user.admin = true;
+								socket.broadcast(parts[1]+' has been promoted to Administrator.');
 							} else {
-								client.send('You must be an admin to do that.');
+								client.send('No user by that name found.');
 							}
 						} else {
-							client.send('You must be logged in to do that.');
+							client.send('You must be logged in as an admin to do that.');
 						}
 						break;
 					
@@ -206,29 +203,25 @@ socket.on('connection', function(client){
 					 * /banip ip
 					 */
 					case '/banip':
-						var admin = users[client.user.username];
-						if (admin){
-							if (admin.admin){
-								// Add IP to blacklist.
-								blacklist.push(parts[1]);
-								socket.broadcast(parts[1]+' has been banned!');
+						var user = users[client.user.username];
+						if (user && user.admin){
+							// Add IP to blacklist.
+							blacklist.push(parts[1]);
+							socket.broadcast(parts[1]+' has been banned!');
+							
+							// Loop through all current clients.
+							for (var i in socket.clients) {
+								// Get client IP.
+								var ip = socket.clients[i].connection.remoteAddress;
 								
-								// Loop through all current clients.
-								for (var i in socket.clients) {
-									// Get client IP.
-									var ip = socket.clients[i].connection.remoteAddress;
-									
-									// If the client IP matches the banned IP, notify and disconnect them.
-									if (parts[1] == ip){
-										socket.clients[i].send('You have been banned!');
-										socket.clients[i] = null;
-									}
+								// If the client IP matches the banned IP, notify and disconnect them.
+								if (parts[1] == ip){
+									socket.clients[i].send('You have been banned!');
+									delete socket.clients[i];
 								}
-							} else {
-								client.send('You must be an admin to do that.');
 							}
 						} else {
-							client.send('You must be logged in to do that.');
+							client.send('You must be logged in as an admin to do that.');
 						}
 						break;
 					
@@ -238,6 +231,8 @@ socket.on('connection', function(client){
 					default:
 						client.send('Unrecognized slashcode.');
 				}
+			
+			// It's a regular message. Broadcast it normally.
 			} else {
 				var user = users[client.user.username] || { admin: false };
 				socket.broadcast({
