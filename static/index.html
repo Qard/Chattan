@@ -28,7 +28,7 @@
 				: document.domain;
 			
 			// Create Socket.IO instance.
-			var socket = new io.Socket(host);
+			var socket = new io.Socket(host, {port:9980});
 			
 			// Set event handlers.
 			socket.on('disconnect', function() { output("Connection Closed."); });
