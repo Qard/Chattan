@@ -10,6 +10,10 @@ var express = require('express')
 // Create generic MOTD.
 var motd = 'For help with using CHATTAN!! type /help.';
 
+// Keep list of loggedin users by name.
+var loggedIn = [];
+var anonLoggedIn = 0;
+
 /************************
  *                      *
  *    Setup Database    *
@@ -176,6 +180,8 @@ socket.on('connection', function(client){
 			, loggedin: true
 		};
 		
+		anonLoggedIn++;
+		
 		// Notify others when a user connects.
 		client.broadcast(client.user._id+' has joined!');
 		client.send('You have joined as '+client.user._id);
@@ -331,7 +337,16 @@ socket.on('connection', function(client){
 									// We want to save loggedin state.
 									db.users.save(username, doc, function(err) {
 										if ( ! err) {
+											// Update with user data retrieved from database.
 											client.user = doc;
+											
+											// No longer anonymous.
+											anonLoggedIn--;
+											
+											// Add named user to list of logged in users.
+											loggedIn.push(username);
+											
+											// Notify all clients.
 											socket.broadcast(client.user._id+' has logged in.');
 										}
 									});
@@ -438,13 +453,7 @@ socket.on('connection', function(client){
 					 * /who
 					 */
 					case '/who':
-						db.view('users/loggedin', function (err, res) {
-							var loggedin = [];
-							
-							for (var i in res) {
-								console.log(res[i]);
-							}
-						});
+						client.send('Logged in users: '+loggedIn.join(', '));
 						break;
 					
 					/**
@@ -469,8 +478,18 @@ socket.on('connection', function(client){
 		client.on('disconnect', function(){
 			client.broadcast(client.user._id+' logged out!');
 			
-			// Track whether a user is currently logged in or not.
-			db.users.merge(client.user._id, { loggedin: false }, function(){});
+			if (client.user._id === 'Anonymous') {
+				anonLoggedIn--;
+			} else {
+				// Track whether a user is currently logged in or not.
+				db.users.merge(client.user._id, { loggedin: false }, function(){});
+				
+				// Get index of username in logged in users list.
+				var index = loggedIn.indexOf(client.user._id);
+				
+				// Remove item from logged in users list.
+				loggedIn.splice(index);
+			}
 		});
 	}
 });
