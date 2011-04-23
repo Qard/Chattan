@@ -433,6 +433,21 @@ socket.on('connection', function(client){
 						}
 					
 					/**
+					 * Get a list of currently logged in users.
+					 * 
+					 * /who
+					 */
+					case '/who':
+						db.view('users/loggedin', function (err, res) {
+							var loggedin = [];
+							
+							for (var i in res) {
+								console.log(res[i]);
+							}
+						});
+						break;
+					
+					/**
 					 * Notify user of unrecognized slashcodes.
 					 */
 					default:
