@@ -28,7 +28,7 @@
 				: null;
 			
 			// Create Socket.IO instance.
-			var socket = new io.Socket(host, {port:9980});
+			var socket = new io.Socket(host, {port:9980,transports: ['websocket']});
 			
 			// Set event handlers.
 			socket.on('disconnect', function() { output("Connection Closed."); });
