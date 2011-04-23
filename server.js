@@ -71,8 +71,9 @@ if (creds.users) {
 				creds.users[i].password = pass;
 				
 				// Save to database.
-				db.users.save(i, creds.users[i], function(err){
+				db.users.save(i, creds.users[i], function(err, res){
 					if ( ! err) {
+						console.log(res);
 						delete creds.users[i];
 					}
 				});
@@ -312,7 +313,7 @@ socket.on('connection', function(client){
 							} else {
 								// Encrypt password.
 								var decipher = crypto.createDecipher(creds.crypto.mode, creds.crypto.key);
-								var pass = decipher.update(doc.password,'utf8','hex');
+								var pass = decipher.update(doc.password, 'utf8', 'hex');
 								pass += decipher.final('hex');
 								
 								console.log('login attempted.');
