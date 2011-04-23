@@ -269,11 +269,11 @@ socket.on('connection', function(client){
 								
 								// Encrypt password.
 								var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
-								var password = cipher.update(password,'utf8','hex');
-								password += cipher.final('hex');
+								var pass = cipher.update(password,'utf8','hex');
+								pass += cipher.final('hex');
 								
 								// Update password to encrypted value.
-								user.password = password;
+								user.password = pass;
 								
 								// Not an admin until promoted.
 								user.admin = false;
