@@ -25,7 +25,7 @@
 			// We need to connect directly. Using the reverse proxy doesn't work well. >.>
 			var host = document.domain == 'localhost'
 				? '127.0.0.1'
-				: document.domain;
+				: null;
 			
 			// Create Socket.IO instance.
 			var socket = new io.Socket(host, {port:9980});
