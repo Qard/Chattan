@@ -16,5 +16,5 @@ module.exports.cloudant = {
 // Crypto settings.
 module.exports.crypto = {
 	mode: 'aes-256-cbc'
-	, key: 'G*(&UGBIug987gHOUoguo9u'
+	, key: 'G*(&UGBIug987gHO&Uoguo9u&_f$7%3@'
 }
