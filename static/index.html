@@ -1,74 +1,387 @@
-<!--
-  Lincense: Public Domain
--->
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>CHATTAN!!</title>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		
+		<!-- Apple iOS support -->
+		<meta name="viewport" content="width=600">
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		
+		<!-- Default style -->
+		<link type="text/css" rel="stylesheet" href="css/style.css">
 
-<html><head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <title>Sample of web_socket.js</title>
-  
-  <!-- Include these three JS files: -->
-  <script type="text/javascript" src="swfobject.js"></script>
-  <script type="text/javascript" src="FABridge.js"></script>
-  <script type="text/javascript" src="web_socket.js"></script>
-
-  <script type="text/javascript">
-    
-    // Set URL of your WebSocketMain.swf here:
-    WEB_SOCKET_SWF_LOCATION = "WebSocketMain.swf";
-    // Set this to dump debug message from Flash to console.log:
-    WEB_SOCKET_DEBUG = false;
-
-    var ws;
-    
-    function init() {
-
-      // Connect to Web Socket.
-      // Change host/port here to your own Web Socket server.
-      ws = new WebSocket("ws://localhost:8000/");
-
-      // Set event handlers.
-      ws.onopen = function() {
-        output("onopen");
-      };
-      ws.onmessage = function(e) {
-        // e.data contains received string.
-        output("onmessage: " + e.data);
-      };
-      ws.onclose = function() {
-        output("onclose");
-      };
-      ws.onerror = function() {
-        output("onerror");
-      };
-
-    }
-    
-    function onSubmit() {
-      var input = document.getElementById("input");
-      // You can send message to the Web Socket using ws.send.
-      ws.send(input.value);
-      output("send: " + input.value);
-      input.value = "";
-      input.focus();
-    }
-    
-    function onCloseClick() {
-      ws.close();
-    }
-    
-    function output(str) {
-      var log = document.getElementById("log");
-      var escaped = str.replace(/&/, "&amp;").replace(/</, "&lt;").
-        replace(/>/, "&gt;").replace(/"/, "&quot;"); // "
-      log.innerHTML = escaped + "<br>" + log.innerHTML;
-    }
-
-  </script>
-</head><body onload="init();">
-  <form onsubmit="onSubmit(); return false;">
-    <input type="text" id="input">
-    <input type="submit" value="Send">
-    <button onclick="onCloseClick(); return false;">close</button>
-  </form>
-  <div id="log"></div>
-</body></html>
+		<!-- jQuery -->
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.1/jquery.min.js" type="text/javascript"></script>
+		<script type="text/javascript" src="js/jquery.flash.min.js"></script> 
+		
+		<!-- Socket.IO -->
+		<script type="text/javascript" src="/socket.io/socket.io.js"></script>
+		
+		<!-- Chat Engine -->
+		<script type="text/javascript">
+		$(document).ready(function(){
+			// We need to connect directly. Using the reverse proxy doesn't work well. >.>
+			var host = document.domain == 'localhost'
+				? '127.0.0.1'
+				: document.domain;
+			
+			// Create Socket.IO instance.
+			var socket = new io.Socket(host, {port:8080});
+			
+			// Set event handlers.
+			socket.on('disconnect', function() { output("Connection Closed."); });
+			//socket.on('connect', function() { output("Connection Established."); });
+			socket.on('message', function(msg) { output(msg); });
+			
+			// Connect.
+			socket.connect();
+			
+			var filters = [
+				// Handle script removal.
+				function(str){
+					return str.toString().replace(/<\s*script[^>]*>[\s\S]*?<\/script>/mig,'');
+				}
+				// Handle inline-script removal.
+				, function(str){
+					str = str.toString().replace(/<\s*[^>]*href="javascript:[^>]*"[^>]*>[\s\S]*?<\/[^>]*>/mig, '');
+					// List of event types.
+					var onevents = [
+						// Mouse events
+						'onclick', 'ondblclick', 'onmousedown', 'onmousemove', 'onmouseout', 'onmouseover', 'onmouseup'
+						// Keyboard events
+						, 'onkeydown', 'onkeypress', 'onkeyup'
+						// Image events
+						, 'onabort'
+						// Form events
+						, 'onblur', 'onchange', 'onfocus', 'onreset', 'onselect', 'onsubmit'
+						// Body events
+						, 'onload', 'onunload'
+					];
+					// Watch for all event types.
+					for (var i in onevents){
+						var reg = new RegExp('<\s*[^>]*'+onevents[i]+'="(javascript)?[^>]*"[^>]*>[\\s\\S]*?<\/[^>]*>', 'gim');
+						str = str.replace(reg, '');
+					}
+					return str;
+				}
+				// Handle object/embed removal.
+				, function(str){
+					return str.toString().replace(/<\s*object[^>]*>[\s\S]*?<\/object>/mig,'').replace(/<\s*embed[^>]*>[\s\S]*?\/>/mig,'');
+				}
+				// Escape HTML
+				/*, function(str){
+					return str.toString().replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+				}*/
+				// Handle magiccards.info replacements.
+				, function(str){
+					var matches = str.match(/(^| +)http(s)?:\/\/(www\.)?magiccards.info\/[\S]+?\.html( +|$)/g);
+					for (var i in matches) {
+						if (matches[i]) {
+							parts = matches[i].split('/');
+							set = parts[parts.length-3];
+							id = parts[parts.length-1].split('.');
+							id = id[0];
+							str = str.replace(matches[i], '<a href="http://magiccards.info/'+set+'/en/'+id+'.html"><img src="http://magiccards.info/scans/en/'+set+'/'+id+'.jpg" /></a>');
+						}
+					}
+					return str;
+				}
+				// Handle image replacements.
+				, function(str){
+					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(jpg|gif|jpeg|png)([\?&#]+[\S]?)?( |$)/g);
+					for (var i in matches) {
+						var txt = $.trim(matches[i]);
+						str = str.replace(txt, '<a href="'+txt+'"><img src="'+txt+'" /></a>');
+					}
+					return str;
+				}
+				// Handle HTML5-Supported video replacements.
+				, function(str){
+					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(mp4|ogg|webm)([\?&#]+[\S]?)?( |$)/g);
+					for (var i in matches) {
+						txt = $.trim(matches[i]);
+						if (txt) {
+							parts = txt.split('.');
+							str = str.replace(
+								txt
+								, [
+									'<video width="600" height="350" controls preload="none">'
+									, '<source src="'+txt+'" type="video/'+parts[parts.length-1]+'" />'
+									, '</video>'
+								].join('')
+							);
+						}
+					}
+					return str;
+				}
+				// Handle google maps replacements.
+				, function(str){
+					var matches = str.match(/(^| )http(s)?:\/\/maps.google.com\/maps\?([\S]*)?(geocode|q)=(([^ ]+))?($| )/g);
+					for (var i in matches) {
+						txt = $.trim(matches[i]);
+						if (txt) {
+							var reg_geocode = new RegExp("[\\?&(?:&amp;)]geocode=([^&#]*)");
+							var reg_q = new RegExp("[\\?&(?:&amp;)]q=([^&#]*)");
+							var parts_geocode = reg_geocode.exec(txt);
+							var parts_q = reg_q.exec(txt);
+							
+							if (parts_geocode || parts_q) {
+								str = str.replace(txt, '<iframe style="height:400px;border:none;width:600px;" src="http://maps.google.com/maps?q='+(parts_geocode[1] ? parts_geocode[1] : parts_q[1])+'&z=15&output=embed"></iframe>');
+							}
+						}
+					}
+					return str;
+				}
+				// Handle video service replacements.
+				, function(str){
+					// Generic video filter.
+					var video_filter = function(msg, regex, url, key){
+						// Find all instances that match the supplied regex.
+						var matches = msg.match(regex);
+						var temp = $('<div />').html(msg);
+										
+						// Iterate our matches.
+						for (var i in matches) {
+							matches[i] = $.trim(matches[i]);
+							// Ignore empty matches...they can happen. >.>
+							if (matches[i]) {
+								// If a keyname has been supplied, we should use that.
+								if (key) {
+									// Grab id.
+									var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
+									var regex = new RegExp(regexS);
+									var parts = regex.exec(matches[i]);
+								
+								// Otherwise, just use everything after the last /
+								// Mainly used for Vimeo support.
+								} else {
+									var parts = matches[i].split('/');
+								}
+								
+								// Make sure we've actually found our id.
+								if (parts) {
+									// Collect id, and replace the {id} token in supplied url.
+									var id = parts[parts.length-1];
+									url = url.replace('{id}', id);
+									
+									// Create placeholder div for our flash object.
+									temp.html(msg.replace(matches[i], '<div class="video"></div>'));
+									
+									// Generate the flash object code and replace the placeholder.
+									$('div.video', temp).flash({
+										src: url
+										, width: 600
+										, height: 350
+										, allowscriptaccess: 'always'
+										, wmode: 'opaque'
+										, allowfullscreen: true
+									});
+								}
+							}
+						}
+						
+						// Return our filtered results.
+						return temp.html();
+					}
+										
+					// Youtube
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/(www\.)?youtube\.com\/watch\?([\S]*)?v=([\S]+)($| )/g
+						, 'http://www.youtube.com/v/{id}&amp;hl=en_US&amp;fs=1'
+						, 'v'
+					);
+					
+					// Vimeo
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/(www\.)?vimeo\.com\/[\S]+($| )/g
+						, 'http://vimeo.com/moogaloop.swf?clip_id={id}&amp;server=vimeo.com&amp;show_title=1&amp;show_byline=1&amp;show_portrait=0&amp;color=&amp;fullscreen=1'
+					);
+					
+					// Google Video
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/video\.google\.com\/videoplay\?([\S]*)?docid=([\S]+)($| )/g
+						, 'http://video.google.com/googleplayer.swf?docid={id}&hl=en&fs=true'
+						, 'docid'
+					);
+					
+					// Facebook
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/(www\.)?facebook\.com(\/)?\?([\S]*)?v=([\S]+)($| )/g
+						, 'http://www.facebook.com/v/{id}'
+						, 'v'
+					);
+					
+					// Myspace
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/vids\.myspace\.com(\/)?(index\.cfm)?\?([\S]*)?videoid=([\S]+)($| )/g
+						, 'http://mediaservices.myspace.com/services/media/embed.aspx/m={id},t=1,mt=video'
+						, 'videoid'
+					);
+					
+					// MegaVideo
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/(www\.)?megavideo\.com(\/)?\?([\S]*)?v=([\S]+)($| )/g
+						, 'http://www.megavideo.com/v/{id}'
+						, 'v'
+					);
+					
+					// DailyMotion
+					str = video_filter(
+						str
+						, /(^| )http(s)?:\/\/(www\.)?dailymotion\.com\/video\/[\S]+($| )/g
+						, 'http://www.dailymotion.com/swf/{id}'
+					);
+					return str;
+				}
+				// Handle PDF/PPT Viewer replacements.
+				, function(str){
+					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(pdf|ppt)([\?&#]+[\S]?)?($| )/g);
+					for (var i in matches) {
+						txt = $.trim(matches[i]);
+						str = str.replace(
+							txt
+							, [
+								'<iframe '
+								, 'src="http://docs.google.com/gview?url='+txt+'&embedded=true" '
+								, 'style="width:600px; height:500px;" '
+								, 'frameborder="0"'
+								, '></iframe><br /><a href="'+txt+'">Download Document</a>'
+							].join('')
+						);
+					}
+					return str;
+				}
+				// Handle plain URL replacements.
+				, function(str){
+					var matches = str.match(/(^| )(http(s)?|ftp):\/\/[\S]+($| )/g);
+					for (var i in matches) {
+						txt = $.trim(matches[i]);
+						str = str.replace(
+							txt
+							, '<a href="'+txt+'">'+txt+'</a>'
+						);
+					}
+					return str;
+				}
+				// Add target="_blank" to all a elements.
+				, function(str){
+					str = str.replace(/<\s*(a)([^>]*)>/mig, '<$1 $2 target="_blank">');
+					return str;
+				}
+			];
+			
+			var prev_ip = null;
+			var prev_message = null;
+			
+			// Output message.
+			function output(str) {
+				// Adjust plain-text input to follow our input object structure.
+				if (typeof(str) != 'object') {
+					str = {
+						message:str
+						, name: null
+						, admin: false
+						, id: null
+						, name: null
+						, sys: true
+					};
+				}
+				
+				// Find our log element.
+				var log = $('table#log');
+				
+				// Clean IP
+				var clean_ip = str.ip ? str.ip : '';
+				clean_ip = clean_ip.replace(/\./mig, '-');
+				
+				// Cycle through our filter list.
+				for (var i in filters){
+					str.message = filters[i](str.message);
+				}
+				
+				// Only post non-empty messages.
+				if ('' != str.message) {
+					// If same user, as last message,
+					// append to newest message block.
+					if (prev_ip == clean_ip) {
+						prev_message.append('<hr />'+str.message);
+					} else {
+						prev_ip = clean_ip;
+						
+						// Generate some elements to contain our message data.
+						var userinfo = $('<div class="userinfo" />');
+						var message = $('<div class="message'+(clean_ip ? ' '+clean_ip : '')+'" />');
+						var row = $('<tr />').attr('class', str.sys ? 'sys-item' : 'item');
+						var td = $('<td />');
+						row.append(td);
+						
+						// Generate timestamp.
+						var date = new Date();
+						var hours = date.getHours();
+						var minutes = date.getMinutes();
+						var seconds = date.getSeconds();
+						hours = (hours >= 10) ? hours : '0'+hours;
+						minutes = (minutes >= 10) ? minutes : '0'+minutes;				
+						seconds = (seconds >= 10) ? seconds : '0'+seconds;
+						var time = hours+':'+minutes+':'+seconds;
+						
+						// Populate user info box.
+						var username = (
+							str.name
+							? ' - <span class="username'+(str.admin ? ' admin' : '')+'">'+str.name+'</span>'
+							: ''
+						);
+						var ip = str.ip ? ' - '+str.ip : '';
+						userinfo.html('<div class="user"><small>'+time+username+ip+'</small></div>');
+						
+						// Insert filtered message into our message element.
+						message.html(str.message);
+						td.append(userinfo).append(message);
+						log.append(row);
+						
+						prev_message = message;
+					}
+					
+					// Add message and auto-scroll.
+					var scroll = (($('body').scrollTop()+$(window).height()) >= ($(document).height()-100));
+					if (scroll) {
+						window.scrollBy(0, log.outerHeight());
+					}
+				}
+			}
+			
+			var submit = function(){
+				var input = $('#input');
+				socket.send(input.val());
+				input.val('');
+				input.focus();
+				
+				return false;
+			};
+			
+			// Handle click and submit events together.
+			$('form').live('submit', submit);
+			$('input[type=submit]').live('click', submit);
+		});
+		</script>
+	</head>
+	<body>
+		<table id="log"></table>
+		<form>
+			<table>
+				<tr>
+					<td style="padding-right:10px;"><input type="text" id="input" /></td>
+					<td style="width:50px;padding-right:10px;"><input type="submit" value="Send" /></td>
+				</tr>
+			</table>
+		</form>
+	</body>
+</html>
