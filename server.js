@@ -315,6 +315,10 @@ socket.on('connection', function(client){
 								var pass = decipher.update(doc.password,'utf8','hex');
 								pass += decipher.final('hex');
 								
+								console.log('login attempted.');
+								console.log('Supplied pass is: '+password);
+								console.log('Saved pass is: '+pass);
+								
 								// Make sure password matches before logging in.
 								if (password !== pass) {
 									client.send('Incorrect password.');
