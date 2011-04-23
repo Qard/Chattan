@@ -312,7 +312,7 @@ socket.on('connection', function(client){
 							} else {
 								// Encrypt password.
 								var decipher = crypto.createDecipher(creds.crypto.mode, creds.crypto.key);
-								var pass = decipher.update(doc.password, 'utf8', 'hex');
+								var pass = decipher.update(doc.password, 'hex', 'utf8');
 								pass += decipher.final('hex');
 								
 								console.log('login attempted.');
