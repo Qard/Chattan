@@ -311,12 +311,12 @@ socket.on('connection', function(client){
 							// User exists, prepare to compare passwords.
 							} else {
 								// Encrypt password.
-								var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
-								var password = cipher.update(password,'utf8','hex');
-								password += cipher.final('hex');
+								var decipher = crypto.createDecipher(creds.crypto.mode, creds.crypto.key);
+								var pass = decipher.update(doc.password,'utf8','hex');
+								pass += decipher.final('hex');
 								
 								// Make sure password matches before logging in.
-								if (password !== doc.password) {
+								if (password !== pass) {
 									client.send('Incorrect password.');
 								
 								// Password matches.
