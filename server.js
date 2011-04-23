@@ -85,6 +85,7 @@ socket.on('connection', function(client){
 							, '/register username password - Register a named user account.'
 							, '/login username password - Login to an existing named user account.'
 							, '/me message - Speak in third person.'
+							, '/motd - Repeat the Message of the Day.'
 						];
 						// Add admin commands to list, if user is an admin.
 						var user = users[client.user.username];
@@ -163,7 +164,7 @@ socket.on('connection', function(client){
 					case '/motd':
 						// We are only reading the MOTD, just respond.
 						if (parts.length === 1) {
-							client.send(motd);
+							client.send('MOTD: '+motd);
 							
 						// We are changing the MOTD, we need to verify admin status.
 						} else {
