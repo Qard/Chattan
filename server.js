@@ -456,7 +456,7 @@ socket.on('connection', function(client){
 					case '/who':
 						client.send(
 							anonLoggedIn+' anonymous users'
-							(loggedIn.length
+							+(loggedIn.length
 								? ' and '+loggedIn.length+' named users ('+loggedIn.join(', ')+')'
 								: ''
 							)
