@@ -1,27 +1,101 @@
 #!/usr/local/bin/node
+// Load required modules.
 var express = require('express')
 	, socket = require('socket.io')
-	, pathToFiles = '/static'
-	, clients = [];
+	, cradle = require('cradle')
+	, crypto = require('crypto')
+	, creds = require('./creds');
 
+// Create Cloudant CouchDB connection.
+var couch = new(cradle.Connection)({
+	host: 'chattan.cloudant.com'
+	, port: 443
+	, secure: true
+	, cache: true
+	, raw: false
+	, auth: creds.cloudant
+});
+
+// Create database connections.
+var db = {
+	users: couch.database('users')
+	, blacklist: couch.database('blacklist')
+};
+
+// Load blacklist into array. It probably won't eat too much memory.
+// I'd rather load it now than make the users wait on connection.
+var blacklist = [];
+db.blacklist.all(function(err, res){
+	if ( ! err) {
+		for (var i in res) {
+			blacklist.push(res[i].id);
+		}
+	}
+});
+
+// Create express server.
 var app = express.createServer();
 
+// Configure express to serve static files.
 app.configure(function(){
 	app.use(express.static(__dirname+'/static'));
 });
 
-app.listen(8124, '127.0.0.1');
+// Start listening.
+app.listen(8124);
 
-// Wrap Connect server
-var socket = socket.listen(app);
-
-var blacklist = [];
+// Create generic MOTD.
 var motd = 'For help with using CHATTAN!! type /help.';
+
+
 var usednames = [];
-var users = require('./creds');
+var users = creds.users;
 for (var i in users) {
 	usednames.push(i);
 }
+
+// Encrypt a string.
+var text = "123|123123123123123";
+var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
+var crypted = cipher.update(text,'utf8','hex');
+crypted += cipher.final('hex');
+
+// Decrypt a string.
+var decipher = crypto.createDecipher(creds.crypto.mode, creds.crypto.key);
+var decrypted = decipher.update(crypted,'hex','utf8');
+decrypted += decipher.final('utf8');
+
+console.log([crypted,decrypted]);
+
+// If default users were supplied,
+// make sure they are in the database.
+if (creds.users) {
+	for (var i in creds.users) {
+		db.users.get(i, function(err, doc) {
+			// They don't exist yet, add them.
+			if (err) {
+				// Move name into doc structure.
+				creds.users[i]._id = i;
+				
+				// Encrypt password.
+				var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
+				var pass = cipher.update(creds.users[i].password,'utf8','hex');
+				pass += cipher.final('hex');
+				
+				// Update password to encrypted value.
+				creds.users[i].password = pass;
+				
+				// Save to database.
+				db.users.save(i, creds.users[i], function(){});
+			}
+		});
+	}
+}
+
+
+
+// Wrap express server
+var socket = socket.listen(app);
 
 // Define connection event.
 socket.on('connection', function(client){
@@ -111,21 +185,54 @@ socket.on('connection', function(client){
 					 * /register username password
 					 */
 					case '/register':
-						// Make sure that name isn't already taken.
-						if (users[parts[1]]){
-							client.send('That name is already taken.');
+						var username = parts[1];
+						var password = parts[2];
 						
-						// Otherwise, add user to user list.
-						} else {
-							users[parts[1]] = {
-								password: parts[2] || ''
-								, admin: false
-								, loggedin: true
-							};
-							var old_name = client.user.username;
-							client.user.username = parts[1];
-							socket.broadcast(old_name+' is now '+client.user.username);
-						}
+						// Attempt to fetch the user from the database.
+						db.users.get(username, function(err, doc) {
+							// Make sure that name isn't already taken.
+							if ( ! err) {
+								client.send('That name is already taken.');
+							
+							// Otherwise, add user to user list.
+							} else {
+								// Get old username.
+								var old_name = client.user.username;
+								
+								// Create temporary user object.
+								var user = {};
+								
+								// User existing user data as prototype.
+								user.prototype = client.user;
+								
+								// Move name into doc structure.
+								user._id = username;
+								user.username = username;
+								
+								// Encrypt password.
+								var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
+								var password = cipher.update(password,'utf8','hex');
+								password += cipher.final('hex');
+								
+								// Update password to encrypted value.
+								user.password = password;
+								
+								// Not an admin until promoted.
+								user.admin = false;
+								user.loggedin = true;
+								
+								// Save to database.
+								db.users.save(parts[1], user, function(err, res){
+									if (err) {
+										client.send('Registration failed. Try again later.');
+									} else {
+										// Overwrite actual user data with temporary data.
+										client.user = user;
+										socket.broadcast(old_name+' is now '+user.username);
+									}
+								});
+							}
+						});
 						break;
 					
 					/**
@@ -135,16 +242,41 @@ socket.on('connection', function(client){
 					 */
 					case '/login':
 						var user = users[parts[1]];
-						if (user){
-							if (parts[2] == user.password){
-								client.user.username = parts[1];
-								socket.broadcast(client.user.username+' has logged in.');
+						var username = parts[1];
+						var password = parts[2];
+						
+						// Attempt to fetch the user from the database.
+						db.users.get(username, function(err, doc) {
+							// Make sure named user exists.
+							if (err) {
+								client.send('That user does not exist.');
+							
+							// User exists, prepare to compare passwords.
 							} else {
-								client.send('Incorrect password.');
+								// Encrypt password.
+								var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
+								var password = cipher.update(password,'utf8','hex');
+								password += cipher.final('hex');
+								
+								// Make sure password matches before logging in.
+								if (password !== doc.password) {
+									client.send('Incorrect password.');
+								
+								// Password matches.
+								} else {
+									// Set loggedin state.
+									doc.loggedin = true;
+									
+									// We want to save loggedin state.
+									db.users.save(username, doc, function(err) {
+										if ( ! err) {
+											client.user = doc;
+											socket.broadcast(client.user.username+' has logged in.');
+										}
+									});
+								}
 							}
-						} else {
-							client.send('That name is not registered yet. Try using "/register username password" first.');
-						}
+						});
 						break;
 					
 					/**
