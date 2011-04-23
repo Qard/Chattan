@@ -28,10 +28,10 @@
 				: null;
 			
 			// Create Socket.IO instance.
-			var socket = new io.Socket(host/*, {
+			var socket = new io.Socket(host, {
 				port: 9980
 				, secure: (window.location.protocol === 'https:')
-			}*/);
+			});
 			
 			// Set event handlers.
 			socket.on('disconnect', function() { output("Connection Closed."); });
