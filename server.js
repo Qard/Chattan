@@ -4,7 +4,8 @@ var express = require('express')
 	, socket = require('socket.io')
 	, cradle = require('cradle')
 	, crypto = require('crypto')
-	, creds = require('./creds');
+	, creds = require('./creds')
+	, file = require('fs');
 
 // Create Cloudant CouchDB connection.
 var couch = new(cradle.Connection)({
@@ -39,6 +40,16 @@ var app = express.createServer();
 // Configure express to serve static files.
 app.configure(function(){
 	app.use(express.static(__dirname+'/static'));
+	app.use(express.router);
+});
+
+// Serve index.html from all URLs not already occupied by static content.
+app.get('*', function(req, res){
+	res.sendHeader(200, {"Content-Type": "text/html"});
+	file.readFile(__dirname+'/static/index.html', function(err, file) {
+		if (err) throw err;
+		res.send(file);
+	}):
 });
 
 // Start listening.
@@ -46,26 +57,6 @@ app.listen(8124);
 
 // Create generic MOTD.
 var motd = 'For help with using CHATTAN!! type /help.';
-
-
-var usednames = [];
-var users = creds.users;
-for (var i in users) {
-	usednames.push(i);
-}
-
-// Encrypt a string.
-var text = "123|123123123123123";
-var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
-var crypted = cipher.update(text,'utf8','hex');
-crypted += cipher.final('hex');
-
-// Decrypt a string.
-var decipher = crypto.createDecipher(creds.crypto.mode, creds.crypto.key);
-var decrypted = decipher.update(crypted,'hex','utf8');
-decrypted += decipher.final('utf8');
-
-console.log([crypted,decrypted]);
 
 // If default users were supplied,
 // make sure they are in the database.
@@ -79,66 +70,80 @@ if (creds.users) {
 				
 				// Encrypt password.
 				var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
-				var pass = cipher.update(creds.users[i].password,'utf8','hex');
+				var pass = cipher.update(creds.users[i].password, 'utf8', 'hex');
 				pass += cipher.final('hex');
 				
 				// Update password to encrypted value.
 				creds.users[i].password = pass;
 				
 				// Save to database.
-				db.users.save(i, creds.users[i], function(){});
+				db.users.save(i, creds.users[i], function(err){
+					if ( ! err) {
+						delete creds.users[i];
+					}
+				});
 			}
 		});
 	}
 }
 
+// Give banned users the boot.
+var isBanned = function(client) {
+	if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
+		client.send('You have been banned!');
+		delete client;
+		return true;
+	} else {
+		return false;
+	}
+};
 
+var findUserInSocket = function(name) {
+	for (var i in socket.clients) {
+		if (socket.clients[i].user._id === name) {
+			return socket.clients[i].user;
+		}
+	}
+	return false;
+};
 
 // Wrap express server
 var socket = socket.listen(app);
 
 // Define connection event.
 socket.on('connection', function(client){
-	// Ignore blacklisted clients.
-	if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
-		client.send('You have been banned!');
-		delete client;
-		return;
-	
-	// Execute our client management code for non-blacklisted clients.
-	} else {
-		// Store some data on our client.
+	// Ignore banned users.
+	if ( ! isBanned(client)) {
+		// Make an Anonymous user object.
 		client.user = {
-			username: 'Anonymous'
+			_id: 'Anonymous'
+			, admin: false
+			, loggedin: true
 		};
 		
 		// Notify others when a user connects.
-		client.broadcast(client.user.username+' joined!');
-		client.send('You have joined as '+client.user.username);
+		client.broadcast(client.user._id+' has joined!');
+		client.send('You have joined as '+client.user._id);
+		
+		// Send the MOTD, if set.
 		if (motd){
 			client.send('MOTD: '+motd);
 		}
 		
 		// Pass messages to other users.
 		client.on('message', function(msg){
-			if (client.connection && blacklist.indexOf(client.connection.remoteAddress) > -1){
-				client.send('You have been banned!');
-				delete client;
-				return;
-			}
-
-			// Output for logging.
-			console.log(msg);
-			
 			// Check for slash codes
 			if (msg[0] == '/'){
-				// Split 
+				// Split message
 				var parts = msg.split(' ');
+				
+				// Store code and message content.
+				var code = parts[0];
 				var message = parts.slice(1).join(' ');
 				
-				switch (parts[0]){
+				switch (code){
 					/**
-					 * Provide a helpful list of slashcodes to new users.
+					 * Provide a list of helpful information for new users.
 					 * 
 					 * /help
 					 */
@@ -153,6 +158,7 @@ socket.on('connection', function(client){
 							, 'Google Maps Permalinks'
 							, 'and of course regular, plain old URLs'
 						];
+						
 						// Generate available command list.
 						var list = [
 							'<h4>User slashcodes:</h4>'
@@ -161,15 +167,16 @@ socket.on('connection', function(client){
 							, '/me message - Speak in third person.'
 							, '/motd - Repeat the Message of the Day.'
 						];
+						
 						// Add admin commands to list, if user is an admin.
-						var user = users[client.user.username];
-						if (user && user.admin){
+						if (client.user.admin) {
 							list.push('');
 							list.push('<h4>Admin slashcodes:</h4>');
 							list.push('/motd message - Set the Message of the Day.');
 							list.push('/promote username - Promote a user to admin status.');
 							list.push('/banip ip - Ban a user by IP address.');
 						}
+						
 						// Construct message.
 						var msg = 'There are many text filters to convert URLs to embedded content, including:';
 						msg += '<ul><li>'+filters.join('</li><li>')+'</li></ul>';
@@ -185,7 +192,7 @@ socket.on('connection', function(client){
 					 * /register username password
 					 */
 					case '/register':
-						var username = parts[1];
+						var username = parts[1].toLowerCase();
 						var password = parts[2];
 						
 						// Attempt to fetch the user from the database.
@@ -197,17 +204,13 @@ socket.on('connection', function(client){
 							// Otherwise, add user to user list.
 							} else {
 								// Get old username.
-								var old_name = client.user.username;
+								var old_name = client.user._id;
 								
 								// Create temporary user object.
 								var user = {};
 								
-								// User existing user data as prototype.
-								user.prototype = client.user;
-								
 								// Move name into doc structure.
 								user._id = username;
-								user.username = username;
 								
 								// Encrypt password.
 								var cipher = crypto.createCipher(creds.crypto.mode, creds.crypto.key);
@@ -228,7 +231,7 @@ socket.on('connection', function(client){
 									} else {
 										// Overwrite actual user data with temporary data.
 										client.user = user;
-										socket.broadcast(old_name+' is now '+user.username);
+										socket.broadcast(old_name+' is now '+user._id);
 									}
 								});
 							}
@@ -241,8 +244,7 @@ socket.on('connection', function(client){
 					 * /login username password
 					 */
 					case '/login':
-						var user = users[parts[1]];
-						var username = parts[1];
+						var username = parts[1].toLowerCase();
 						var password = parts[2];
 						
 						// Attempt to fetch the user from the database.
@@ -271,7 +273,7 @@ socket.on('connection', function(client){
 									db.users.save(username, doc, function(err) {
 										if ( ! err) {
 											client.user = doc;
-											socket.broadcast(client.user.username+' has logged in.');
+											socket.broadcast(client.user._id+' has logged in.');
 										}
 									});
 								}
@@ -285,7 +287,7 @@ socket.on('connection', function(client){
 					 * /me is speaking in third person.
 					 */
 					case '/me':
-						socket.broadcast(client.user.username+' '+message);
+						socket.broadcast(client.user._id+' '+message);
 						break;
 					
 					/**
@@ -294,19 +296,14 @@ socket.on('connection', function(client){
 					 * /motd This is the motd!
 					 */
 					case '/motd':
-						// We are only reading the MOTD, just respond.
-						if (parts.length === 1) {
-							client.send('MOTD: '+motd);
-							
 						// We are changing the MOTD, we need to verify admin status.
+						if (client.user.admin && message) {
+							motd = message;
+							socket.broadcast('MOTD changed to: '+motd);
+							
+						// We are only reading the MOTD, just respond.
 						} else {
-							var user = users[client.user.username];
-							if (user && user.admin){
-								motd = message;
-								socket.broadcast('MOTD changed to: '+motd);
-							} else {
-								client.send('You must be logged in as an admin to do that.');
-							}
+							client.send('MOTD: '+motd);
 						}
 						break;
 					
@@ -316,19 +313,29 @@ socket.on('connection', function(client){
 					 * /promote username
 					 */
 					case '/promote':
-						var user = users[client.user.username];
-						if (user && user.admin){
-							var user = users[parts[1]];
-							if (user){
-								user.admin = true;
-								socket.broadcast(parts[1]+' has been promoted to Administrator.');
-							} else {
-								client.send('No user by that name found.');
-							}
-						} else {
-							client.send('You must be logged in as an admin to do that.');
+						if (client.user.admin){
+							var username = parts[1].toLowerCase();
+						
+							// Attempt to fetch the user from the database.
+							db.users.get(username, function(err, doc) {
+								if ( ! err) {
+									db.users.merge(username, { admin: true }, function(err, res){
+										if (err) {
+											client.send('No user by that name found.');
+										} else {
+											// Overwrite actual user data with temporary data.
+											var user = findUserInSocket(username);
+											user = doc;
+											socket.broadcast(username+' has been promoted to Administrator.');
+										}
+									});
+								}
+							});
+							
+							// Only break the switch for admins.
+							// Don't want users to know this slashcode exists.
+							break;
 						}
-						break;
 					
 					/**
 					 * Ban a user by IP address.
@@ -336,27 +343,31 @@ socket.on('connection', function(client){
 					 * /banip ip
 					 */
 					case '/banip':
-						var user = users[client.user.username];
-						if (user && user.admin){
+						if (client.user.admin) {
 							// Add IP to blacklist.
-							blacklist.push(parts[1]);
-							socket.broadcast(parts[1]+' has been banned!');
-							
-							// Loop through all current clients.
-							for (var i in socket.clients) {
-								// Get client IP.
-								var ip = socket.clients[i].connection.remoteAddress;
-								
-								// If the client IP matches the banned IP, notify and disconnect them.
-								if (parts[1] == ip){
-									socket.clients[i].send('You have been banned!');
-									delete socket.clients[i];
+							db.blacklist.save(parts[1], { reason: parts[2] || 'Unspecified' }, function(err, doc){
+								if ( ! err) {
+									blacklist.push(doc.id);
+									socket.broadcast(doc.id+' has been banned!');
+									
+									// Loop through all current clients.
+									for (var i in socket.clients) {
+										// Get client IP.
+										var IP = socket.clients[i].connection.remoteAddress;
+										
+										// If the client IP matches the banned IP, notify and disconnect them.
+										if (doc.id == IP){
+											socket.clients[i].send('You have been banned!');
+											delete socket.clients[i];
+										}
+									}
 								}
-							}
-						} else {
-							client.send('You must be logged in as an admin to do that.');
+							});
+							
+							// Only break the switch for admins.
+							// Don't want users to know this slashcode exists.
+							break;
 						}
-						break;
 					
 					/**
 					 * Notify user of unrecognized slashcodes.
@@ -367,11 +378,10 @@ socket.on('connection', function(client){
 			
 			// It's a regular message. Broadcast it normally.
 			} else {
-				var user = users[client.user.username] || { admin: false };
 				socket.broadcast({
 					message: msg
-					, name: client.user.username
-					, admin: user.admin
+					, name: client.user._id
+					, admin: client.user.admin
 					, ip: client.connection.remoteAddress
 				});
 			}
@@ -379,13 +389,10 @@ socket.on('connection', function(client){
 			
 		// Notify others when a user disconnects.
 		client.on('disconnect', function(){
-			client.broadcast(client.user.username+' logged out!');
+			client.broadcast(client.user._id+' logged out!');
 			
 			// Track whether a user is currently logged in or not.
-			var user = users[client.user.username];
-			if (user){
-				user.loggedin = false;
-			}
+			db.users.merge(client.user._id, { loggedin: false }, function(){});
 		});
 	}
 });
