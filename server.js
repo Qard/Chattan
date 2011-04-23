@@ -453,7 +453,11 @@ socket.on('connection', function(client){
 					 * /who
 					 */
 					case '/who':
-						client.send('Logged in users: '+loggedIn.join(', '));
+						client.send(
+							loggedIn.length
+								? 'Named users currently logged in: '+loggedIn.join(', ')
+								: 'No named users logged in currently.'
+						);
 						break;
 					
 					/**
