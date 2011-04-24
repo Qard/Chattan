@@ -108,7 +108,7 @@ var app = express.createServer();
 // Configure express to serve static files.
 app.configure(function(){
 	app.use(express.static(__dirname+'/static'));
-	app.use(express.router);
+	app.use(app.router);
 });
 
 // Serve index.html from all URLs not already occupied by static content.
