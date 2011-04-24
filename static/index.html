@@ -31,6 +31,7 @@
 			var socket = new io.Socket(host, {
 				port: 9980
 				, secure: (window.location.protocol === 'https:')
+				, resource: window.location.pathname
 			});
 			
 			// Set event handlers.
