@@ -114,7 +114,7 @@ app.configure(function(){
 // Serve index.html from all URLs not already occupied by static content.
 app.get('*', function(req, res){
 	res.sendHeader(200, {"Content-Type": "text/html"});
-	file.readFile(__dirname+'/static/index.html', function(err, file) {
+	file.readFile('static/index.html', function(err, file) {
 		if (err) throw err;
 		res.send(file);
 	});
