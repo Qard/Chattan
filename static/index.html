@@ -87,45 +87,51 @@
 								
 				// Iterate our matches.
 				for (var i in matches) {
-					// If a keyname has been supplied, we should use that.
-					if (key) {
-						// Grab id.
-						var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
-						var regex = new RegExp(regexS);
-						var parts = regex.exec(matches[i]);
-					
-					// Otherwise, just use everything after the last /
-					// Mainly used for Vimeo support.
-					} else {
-						var parts = matches[i].split('/');
-					}
-					
-					// Make sure we've actually found our id.
-					if (parts && parts.length) {
-						// Collect id, and replace the {id} token in supplied url.
-						var id = parts[parts.length-1];
-						url = url.replace('{id}', id);
+					(function(){
+						var match = $.trim(matches[i]);
+						// If a keyname has been supplied, we should use that.
+						if (key) {
+							// Grab id.
+							var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
+							var regex = new RegExp(regexS);
+							var parts = regex.exec(match);
 						
-						// Replace message content.
-						msg = msg.replace(matches[i], '<div class="video"></div>');
+						// Otherwise, just use everything after the last /
+						// Mainly used for Vimeo support.
+						} else {
+							var parts = match.split('/');
+						}
 						
-						// Create placeholder div for our flash object.
-						temp.html(msg);
-						
-						// Generate the flash object code and replace the placeholder.
-						$('div.video', temp).flash({
-							src: url
-							, width: 600
-							, height: 350
-							, allowscriptaccess: 'always'
-							, wmode: 'opaque'
-							, allowfullscreen: true
-						});
-					}
+						// Make sure we've actually found our id.
+						if (parts && parts.length) {
+							// Collect id, and replace the {id} token in supplied url.
+							var id = parts[parts.length-1];
+							var new_url = url.replace('{id}', id);
+							var vid_id = 'video-'+id;
+							
+							// Replace message content.
+							msg = msg.replace(match, '<div class="video" id="'+vid_id+'"></div>');
+							
+							// Create placeholder div for our flash object.
+							temp.html(msg);
+							
+							// Generate the flash object code and replace the placeholder.
+							$('div#'+vid_id, temp).flash({
+								src: new_url
+								, width: 600
+								, height: 350
+								, allowscriptaccess: 'always'
+								, wmode: 'opaque'
+								, allowfullscreen: true
+							});
+							
+							msg = temp.html();
+						}
+					})();
 				}
 				
 				// Return our filtered results.
-				return temp.html();
+				return msg;
 			};
 					
 			var filters = [
