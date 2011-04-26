@@ -361,6 +361,7 @@
 			var upload_config = {
 				url : "/upload"
 				, method : "PUT"
+				// Connect file data to entry once it has uploaded.
 				, complete: function(file){
 					var item = $('div#uploads > div#upload-'+file.name.replace('.','_'));
 					item.data('file', file);
@@ -372,6 +373,7 @@
 						img.attr('src', file.path);
 					}
 				}
+				// Create a queue item when a drop or input change occurs.
 				, drop: function(files){
 					for (var i = 0; i < files.length; i++) {
 						var file = files[i];
@@ -379,21 +381,25 @@
 						var item = $('<div class="upload" />');
 						item.attr('id', 'upload-'+file.name.replace('.','_'));
 						
-						var content = '';
+						var progress = $('<div class="progress" />');
+						item.append(progress);
+						
+						var finfo = $('<div class="file" />');
+						
 						var parts = file.type.split('/');
 						switch (parts[0]) {
 							case 'image':
-								content += '<img src="/img/icons/image.png" style="float:left;width:32px;height:32px;" /> ';
+								finfo.append('<img src="/img/icons/image.png" /> ');
 								break;
 							case 'video':
-								content += '<img src="/img/icons/video.png" style="float:left;width:32px;height:32px;" /> ';
+								finfo.append('<img src="/img/icons/video.png" /> ');
 								break;
 							case 'audio':
-								content += '<img src="/img/icons/audio.png" style="float:left;width:32px;height:32px;" /> ';
+								finfo.append('<img src="/img/icons/audio.png" /> ');
 								break;
 						}
-						content += '<div style="margin-left:40px;font-weight:bold;">'+file.name+'</div>';
-						content += '<div style="margin-left:40px;">'+file.type+' - '+file.size+' bytes</div>';
+						finfo.append('<div class="filename">'+file.name+'</div>');
+						finfo.append('<div class="fileinfo">'+file.type+' - '+file.size+' bytes</div>');
 						
 						var kill = $('<a href="#" class="delete">Remove</a>')
 							.click(function(){
@@ -401,29 +407,45 @@
 								return false;
 							});
 						
-						item.html(content);
-						item.append(kill);
+						finfo.append(kill);
+						item.append(finfo);
 						$('div#uploads').append(item);
+						
+						progress.css({'z-index':0});
+						finfo.css({'z-index':1});
 					}
+					
 					old_overlay = $('div.overlay');
 					if (old_overlay) {
 						old_overlay.hide();
 					}
+					
+					$('#controls #text input').css({
+						background: '#fff'
+					});
 				}
+				// Remove any hidden dialog overlays.
 				, onAllComplete: function(){
 					if (old_overlay) {
 						old_overlay.remove();
 					}
 				}
-				/** /
-				, progress: function(file, percent){
-					if (event.lengthComputable) {
-						var percentComplete = event.loaded / event.total;
-					}
+				// Toggle drop area background color.
+				, dragEnter: function(){
+					$('#controls #text input').css({
+						background: '#eec'
+					});
 				}
-				/**/
+				, dragLeave: function(){
+					$('#controls #text input').css({
+						background: '#fff'
+					});
+				}
+				, progress: function(file, percent){
+					$('div#upload-'+file.name.replace('.','_')+' > div.progress').css({width:percent+'%'});
+				}
 			};
-			$('input#input').droploader(upload_config);
+			$('#controls').droploader(upload_config);
 			
 			$('input#upload').live('click', function(){
 				var overlay = $('<div />')
@@ -467,15 +489,6 @@
 					<input type="text" id="input" />
 				</div>
 			</div>
-			<!--
-			<table id="messagebar">
-				<tr>
-					<td style="padding-right:10px;"><input type="text" id="input" /></td>
-					<td style="width:50px;"><input type="button" id="upload" value="Upload" /></td>
-					<td style="width:50px;padding-right:10px;"><input type="submit" id="send" value="Send" /></td>
-				</tr>
-			</table>
-			-->
 		</form>
 	</body>
 </html>

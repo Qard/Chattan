@@ -105,21 +105,51 @@ form#controls {
 		padding:5px;
 		background-color:#fff;
 		}
-	div#messagebar {
-		overflow:hidden;
+	div#messagebar div#text {
+		margin-right:200px;
 		}
-		div#messagebar div#text {
-			margin-right:200px;
-			}
-		div#messagebar div#buttons {
-			float:right;
-			width:175px;
-			}
+	div#messagebar div#buttons {
+		float:right;
+		width:175px;
+		}
 		div#messagebar div#buttons input {
 			width:45%;
 			margin-left:0;
 			}
-
+	form#controls div.upload {
+		position:relative;
+		height:50px;
+		border-top:solid 1px rgba(0,0,0,0.4);
+		}
+		form#controls div.progress {
+			position:absolute;
+			width:0;
+			height:100%;
+			top:0;
+			left:0;
+			background:#abf;
+			}
+		form#controls div.upload img {
+			position:absolute;
+			width:32px;
+			height:32px;
+			top:10px;
+			left:10px;
+			}
+		form#controls div.upload div.filename, 
+		form#controls div.upload div.fileinfo {
+			position:absolute;
+			top: 10px;
+			left: 50px;
+			}
+		form#controls div.upload div.fileinfo {
+			top: 25px;
+			}
+		form#controls div.upload a.delete {
+			position:absolute;
+			top:15px;
+			right:15px;
+			}
 /* Dialogs */
 div.overlay {
 	position: absolute;
