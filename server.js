@@ -5,7 +5,15 @@ var express = require('express')
 	, cradle = require('cradle')
 	, crypto = require('crypto')
 	, creds = require('./creds')
-	, file = require('fs');
+	, file = require('fs')
+	, s3 = require('knox');
+
+var isLocal = ( ! process.env['DUOSTACK_APP_NAME']);
+
+// Disable S3 when testing locally.
+if (isLocal) {
+	creds.aws = false;
+}
 
 // Create generic MOTD.
 var motd = 'For help with using CHATTAN!! type /help.';
@@ -98,6 +106,21 @@ db.blacklist.all(function(err, res){
 
 /************************
  *                      *
+ *    Configure AWS     *
+ *                      *
+ ************************/
+
+// Connect to S3 bucket.
+if (creds.aws) {
+	var bucket = s3.createClient({
+		key: creds.aws.key
+		, secret: creds.aws.secret
+		, bucket: creds.aws.bucket
+	});
+}
+
+/************************
+ *                      *
  *    Setup Express     *
  *                      *
  ************************/
@@ -108,8 +131,106 @@ var app = express.createServer();
 // Configure express to serve static files.
 app.configure(function(){
 	app.use(express.static(__dirname+'/static'));
-	app.use(app.router);
 });
+
+var uid = function(count, useDate){
+	var id = '';
+	for (var i = 0; i < (count || 16); i++) {
+		var useChars = Math.floor(Math.random()*2);
+		var rand;
+		
+		if (useChars) {
+			var isUpper = Math.floor(Math.random()*2);
+			if (isUpper) {
+				rand = 65 + (Math.random() * 26);
+			} else {
+				rand = 97 + (Math.random() * 26);
+			}
+		} else {
+			rand = 48 + (Math.random() * 10);
+		}
+		id += String.fromCharCode(Math.floor(rand));
+	}
+	return (useDate ? (new Date).getTime().toString()+'_' : '')+id;
+};
+
+// Create a generic upload request handler.
+var uploadHandler = function(req, res) {
+	// Build unique filename.
+	var filename = uid(32)+'_'+req.header('x-file-name');
+	var path = (isLocal ? 'static/uploads' : 'mnt')+'/'+filename;
+	
+	// Make a WriteStream.
+	var stream = file.createWriteStream(path);
+	
+	// Resume read stream after write stream has drained.
+	stream.on('drain', function(){
+		req.resume();
+	});
+	
+	// When the WriteStream closes we are ready to push to S3.
+	stream.on('close', function(){
+		// Assume some filedata.
+		var filedata = {
+			name: req.header('x-file-name')
+			, size: req.header('x-file-size')
+			, type: req.header('x-file-type')
+		};
+		
+		// Check if we have AWS Credentials.
+		if (creds.aws) {
+			// Push newly uploaded file to S3.
+			bucket.putFile(path, '/'+filename, function(err, response){
+				if (err) {
+					console.log(err);
+				
+				// No errors, respond to the client!
+				} else {
+					// Create a JSON object describing the file and it's location.
+					filedata.path = 'http://'+creds.aws.bucket+'.s3.amazonaws.com/'+filename
+					var json = JSON.stringify(filedata);
+					
+					// Send JSON response to client.
+					res.contentType('json');
+					res.header('Content-Length', json.length);
+					res.send(json);
+					
+					// Delete the locally stored file if we are using S3.
+					file.unlink(path);
+				}
+			});
+		
+		// No AWS credentials, store locally.
+		} else {
+			// Create a JSON object describing the file and it's location.
+			filedata.path = 'http://'+req.header('host')+'/uploads/'+filename;
+			var json = JSON.stringify(filedata);
+			
+			// Send JSON response to client.
+			res.contentType('json');
+			res.header('Content-Length', json.length);
+			res.send(json);
+		}
+	});
+		
+	
+	// Watch for data chunks.
+	req.on('data', function(chunk){
+		// Pause ReadStream to wait for WriteStream.
+		req.pause();
+		
+		// Write to WriteStream.
+		stream.write(chunk);
+	});
+	
+	// When ReadStream completes, close WriteStream.
+	req.on('end', function(){
+		stream.end();
+	});
+};
+
+app.put('/upload', uploadHandler);
+app.post('/upload', uploadHandler);
 
 // Serve index.html from all URLs not already occupied by static content.
 app.get('*', function(req, res){

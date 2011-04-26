@@ -14,7 +14,8 @@
 
 		<!-- jQuery -->
 		<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.4.1/jquery.min.js" type="text/javascript"></script>
-		<script type="text/javascript" src="/js/jquery.flash.min.js"></script> 
+		<script type="text/javascript" src="/js/jquery.flash.min.js"></script>
+		<script type="text/javascript" src="/js/jquery.droploader.js"></script>
 		
 		<!-- Socket.IO -->
 		<script type="text/javascript" src="/socket.io/socket.io.js"></script>
@@ -23,13 +24,13 @@
 		<script type="text/javascript">
 		$(document).ready(function(){
 			// We need to connect directly. Using the reverse proxy doesn't work well. >.>
-			var host = document.domain === 'localhost'
+			var host = window.location.hostname === 'localhost'
 				? '127.0.0.1'
 				: null;
 			
 			// Create Socket.IO instance.
 			var socket = new io.Socket(host, {
-				port: 9980
+				port: window.location.hostname === 'localhost' ? 8124 : 9980
 				, secure: (window.location.protocol === 'https:')
 			});
 			
@@ -41,6 +42,92 @@
 			// Connect.
 			socket.connect();
 			
+			// Simple video service filter list. Intended to be added to.
+			var vid_filters = {
+				youtube: {
+					reg: /(^| )http(s)?:\/\/(www\.)?youtube\.com\/watch\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
+					, url: 'http://www.youtube.com/v/{id}&amp;hl=en_US&amp;fs=1'
+					, id: 'v'
+				}
+				, vimeo: {
+					reg: /(^| )http(s)?:\/\/(www\.)?vimeo\.com\/[\S]+($|(?![ ]))?/mig
+					, url: 'http://vimeo.com/moogaloop.swf?clip_id={id}&amp;server=vimeo.com&amp;show_title=1&amp;show_byline=1&amp;show_portrait=0&amp;color=&amp;fullscreen=1'
+				}
+				, google: {
+					reg: /(^| )http(s)?:\/\/video\.google\.com\/videoplay\?([\S]*)?docid=([\S]+)($|(?![ ]))?/mig
+					, url: 'http://video.google.com/googleplayer.swf?docid={id}&hl=en&fs=true'
+					, id: 'docid'
+				}
+				, facebook: {
+					reg: /(^| )http(s)?:\/\/(www\.)?facebook\.com(\/)?\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
+					, url: 'http://www.facebook.com/v/{id}'
+					, id: 'v'
+				}
+				, myspace: {
+					reg: /(^| )http(s)?:\/\/vids\.myspace\.com(\/)?(index\.cfm)?\?([\S]*)?videoid=([\S]+)($|(?![ ]))?/mig
+					, url: 'http://mediaservices.myspace.com/services/media/embed.aspx/m={id},t=1,mt=video'
+					, id: 'videoid'
+				}
+				, megavideo: {
+					reg: /(^| )http(s)?:\/\/(www\.)?megavideo\.com(\/)?\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
+					, url: 'http://www.megavideo.com/v/{id}'
+					, id: 'v'
+				}
+				, dailymotion: {
+					reg: /(^| )http(s)?:\/\/(www\.)?dailymotion\.com\/video\/[\S]+($|(?![ ]))?/mig
+					, url: 'http://www.dailymotion.com/swf/{id}'
+				}
+			};
+			
+			// Generic video filter.
+			var video_filter = function(msg, regex, url, key){
+				// Find all instances that match the supplied regex.
+				var matches = msg.match(regex);
+				var temp = $('<div />').html(msg);
+								
+				// Iterate our matches.
+				for (var i in matches) {
+					// If a keyname has been supplied, we should use that.
+					if (key) {
+						// Grab id.
+						var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
+						var regex = new RegExp(regexS);
+						var parts = regex.exec(matches[i]);
+					
+					// Otherwise, just use everything after the last /
+					// Mainly used for Vimeo support.
+					} else {
+						var parts = matches[i].split('/');
+					}
+					
+					// Make sure we've actually found our id.
+					if (parts && parts.length) {
+						// Collect id, and replace the {id} token in supplied url.
+						var id = parts[parts.length-1];
+						url = url.replace('{id}', id);
+						
+						// Replace message content.
+						msg = msg.replace(matches[i], '<div class="video"></div>');
+						
+						// Create placeholder div for our flash object.
+						temp.html(msg);
+						
+						// Generate the flash object code and replace the placeholder.
+						$('div.video', temp).flash({
+							src: url
+							, width: 600
+							, height: 350
+							, allowscriptaccess: 'always'
+							, wmode: 'opaque'
+							, allowfullscreen: true
+						});
+					}
+				}
+				
+				// Return our filtered results.
+				return temp.html();
+			};
+					
 			var filters = [
 				// Handle script removal.
 				function(str){
@@ -79,49 +166,33 @@
 				}*/
 				// Handle magiccards.info replacements.
 				, function(str){
-					var matches = str.match(/(^| +)http(s)?:\/\/(www\.)?magiccards.info\/[\S]+?\.html( +|$)/g);
-					for (var i in matches) {
-						if (matches[i]) {
-							parts = matches[i].split('/');
-							set = parts[parts.length-3];
-							id = parts[parts.length-1].split('.');
-							id = id[0];
-							str = str.replace(matches[i], '<a href="http://magiccards.info/'+set+'/en/'+id+'.html"><img src="http://magiccards.info/scans/en/'+set+'/'+id+'.jpg" /></a>');
-						}
-					}
+					str = str.replace(
+						/(?:^| )https?:\/\/(?:www\.)?magiccards.info\/([\S]+)?\/([\S]+)?\/([\S]+)?\.html(?:$|(?:?![ ]))?/mig
+						, '<a href="http://magiccards.info/$1/$2/$3.html"><img src="http://magiccards.info/scans/$2/$1/$3.jpg" /></a>'
+					);
 					return str;
 				}
 				// Handle image replacements.
 				, function(str){
-					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(jpg|gif|jpeg|png)([\?&#]+[\S]?)?( |$)/g);
-					for (var i in matches) {
-						var txt = $.trim(matches[i]);
-						str = str.replace(txt, '<a href="'+txt+'"><img src="'+txt+'" /></a>');
-					}
+					str = str.replace(/(?: |^)((?:ht|f)tps?:\/\/[\S]+\.(?:jpg|gif|png))(?:$|(?:?![ ]))?/mig, '<a href="$1"><img src="$1" /></a>');
 					return str;
 				}
 				// Handle HTML5-Supported video replacements.
 				, function(str){
-					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(mp4|ogg|webm)([\?&#]+[\S]?)?( |$)/g);
-					for (var i in matches) {
-						txt = $.trim(matches[i]);
-						if (txt) {
-							parts = txt.split('.');
-							str = str.replace(
-								txt
-								, [
-									'<video width="600" height="350" controls preload="none">'
-									, '<source src="'+txt+'" type="video/'+parts[parts.length-1]+'" />'
-									, '</video>'
-								].join('')
-							);
-						}
-					}
+					str = str.replace(
+						/(?:^| )((?:ht|f)tps?:\/\/[\S]+?\.(mp4|ogg|webm)(?:[\?&#]+[\S]?)?)(?:$|(?:?![ ]))?/mig
+						, [
+							'<video width="600" height="350" controls preload="none">'
+							, '<source src="$1" type="video/$2" />'
+							, '</video>'
+						].join('')
+					);
 					return str;
 				}
 				// Handle google maps replacements.
 				, function(str){
-					var matches = str.match(/(^| )http(s)?:\/\/maps.google.com\/maps\?([\S]*)?(geocode|q)=(([^ ]+))?($| )/g);
+					// TODO: Clean this up...It's pretty ugly.
+					var matches = str.match(/(^| )http(s)?:\/\/maps.google.com\/maps\?([\S]*)?(geocode|q)=(([^ ]+))?($|(?![ ]))?/g);
 					for (var i in matches) {
 						txt = $.trim(matches[i]);
 						if (txt) {
@@ -139,139 +210,35 @@
 				}
 				// Handle video service replacements.
 				, function(str){
-					// Generic video filter.
-					var video_filter = function(msg, regex, url, key){
-						// Find all instances that match the supplied regex.
-						var matches = msg.match(regex);
-						var temp = $('<div />').html(msg);
-										
-						// Iterate our matches.
-						for (var i in matches) {
-							matches[i] = $.trim(matches[i]);
-							// Ignore empty matches...they can happen. >.>
-							if (matches[i]) {
-								// If a keyname has been supplied, we should use that.
-								if (key) {
-									// Grab id.
-									var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
-									var regex = new RegExp(regexS);
-									var parts = regex.exec(matches[i]);
-								
-								// Otherwise, just use everything after the last /
-								// Mainly used for Vimeo support.
-								} else {
-									var parts = matches[i].split('/');
-								}
-								
-								// Make sure we've actually found our id.
-								if (parts) {
-									// Collect id, and replace the {id} token in supplied url.
-									var id = parts[parts.length-1];
-									url = url.replace('{id}', id);
-									
-									// Create placeholder div for our flash object.
-									temp.html(msg.replace(matches[i], '<div class="video"></div>'));
-									
-									// Generate the flash object code and replace the placeholder.
-									$('div.video', temp).flash({
-										src: url
-										, width: 600
-										, height: 350
-										, allowscriptaccess: 'always'
-										, wmode: 'opaque'
-										, allowfullscreen: true
-									});
-								}
-							}
-						}
-						
-						// Return our filtered results.
-						return temp.html();
+					// Loop through video filter list.
+					for (var i in vid_filters) {
+						var filter = vid_filters[i];
+						str = video_filter(
+							str
+							, filter.reg
+							, filter.url
+							, filter.id || null
+						);
 					}
-										
-					// Youtube
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/(www\.)?youtube\.com\/watch\?([\S]*)?v=([\S]+)($| )/g
-						, 'http://www.youtube.com/v/{id}&amp;hl=en_US&amp;fs=1'
-						, 'v'
-					);
-					
-					// Vimeo
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/(www\.)?vimeo\.com\/[\S]+($| )/g
-						, 'http://vimeo.com/moogaloop.swf?clip_id={id}&amp;server=vimeo.com&amp;show_title=1&amp;show_byline=1&amp;show_portrait=0&amp;color=&amp;fullscreen=1'
-					);
-					
-					// Google Video
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/video\.google\.com\/videoplay\?([\S]*)?docid=([\S]+)($| )/g
-						, 'http://video.google.com/googleplayer.swf?docid={id}&hl=en&fs=true'
-						, 'docid'
-					);
-					
-					// Facebook
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/(www\.)?facebook\.com(\/)?\?([\S]*)?v=([\S]+)($| )/g
-						, 'http://www.facebook.com/v/{id}'
-						, 'v'
-					);
-					
-					// Myspace
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/vids\.myspace\.com(\/)?(index\.cfm)?\?([\S]*)?videoid=([\S]+)($| )/g
-						, 'http://mediaservices.myspace.com/services/media/embed.aspx/m={id},t=1,mt=video'
-						, 'videoid'
-					);
-					
-					// MegaVideo
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/(www\.)?megavideo\.com(\/)?\?([\S]*)?v=([\S]+)($| )/g
-						, 'http://www.megavideo.com/v/{id}'
-						, 'v'
-					);
-					
-					// DailyMotion
-					str = video_filter(
-						str
-						, /(^| )http(s)?:\/\/(www\.)?dailymotion\.com\/video\/[\S]+($| )/g
-						, 'http://www.dailymotion.com/swf/{id}'
-					);
 					return str;
 				}
 				// Handle PDF/PPT Viewer replacements.
 				, function(str){
-					var matches = str.match(/(^| )http(s)?:\/\/[\S]+?\.(pdf|ppt)([\?&#]+[\S]?)?($| )/g);
-					for (var i in matches) {
-						txt = $.trim(matches[i]);
-						str = str.replace(
-							txt
-							, [
-								'<iframe '
-								, 'src="http://docs.google.com/gview?url='+txt+'&embedded=true" '
-								, 'style="width:600px; height:500px;" '
-								, 'frameborder="0"'
-								, '></iframe><br /><a href="'+txt+'">Download Document</a>'
-							].join('')
-						);
-					}
+					str = str.replace(
+						/(^| )(http(s)?:\/\/[\S]+?\.(?:pdf|ppt)([\?&#]+[\S]?)?)($|(?![ ]))?/mig
+						, [
+							'<div class="inline-document"><iframe '
+							, 'src="http://docs.google.com/gview?url=$2&embedded=true" '
+							, 'style="width:600px; height:500px;" '
+							, 'frameborder="0"'
+							, '></iframe><br /><a href="$2">Download Document</a></div>'
+						].join('')
+					);
 					return str;
 				}
 				// Handle plain URL replacements.
 				, function(str){
-					var matches = str.match(/(^| )(http(s)?|ftp):\/\/[\S]+($| )/g);
-					for (var i in matches) {
-						txt = $.trim(matches[i]);
-						str = str.replace(
-							txt
-							, '<a href="'+txt+'">'+txt+'</a>'
-						);
-					}
+					str = str.replace(/( |^)((?:ht|f)tps?:\/\/[\S]+)($|(?![ ]))?/mig, '$1<a href="$2">$2</a>$3');
 					return str;
 				}
 				// Add target="_blank" to all a elements.
@@ -283,6 +250,8 @@
 			
 			var prev_ip = null;
 			var prev_message = null;
+			
+			var files = [];
 			
 			// Output message.
 			function output(str) {
@@ -361,30 +330,152 @@
 				}
 			}
 			
-			var submit = function(){
-				var input = $('#input');
-				socket.send(input.val());
-				input.val('');
-				input.focus();
+			var submit = function(e){
+				e.stopPropagation();
+				e.preventDefault();
+				
+				(function(input){
+					var val = input.val();
+					$('div#uploads div.upload').each(function(){
+						var file = $(this).data('file');
+						if (file.path) {
+							val = file.path+' '+val;
+						}
+						$(this).remove();
+					});
+					
+					socket.send(val);
+					input.val('');
+					input.focus();
+				})($('#input'));
 				
 				return false;
 			};
 			
 			// Handle click and submit events together.
 			$('form').live('submit', submit);
-			$('input[type=submit]').live('click', submit);
+			$('input#send').live('click', submit);
+			
+			// Configure upload handlers.
+			var old_overlay;
+			var upload_config = {
+				url : "/upload"
+				, method : "PUT"
+				, complete: function(file){
+					var item = $('div#uploads > div#upload-'+file.name.replace('.','_'));
+					item.data('file', file);
+					
+					var img = item.find('img');
+					
+					var parts = file.type.split('/');
+					if (parts[0] === 'image') {
+						img.attr('src', file.path);
+					}
+				}
+				, drop: function(files){
+					for (var i = 0; i < files.length; i++) {
+						var file = files[i];
+						
+						var item = $('<div class="upload" />');
+						item.attr('id', 'upload-'+file.name.replace('.','_'));
+						
+						var content = '';
+						var parts = file.type.split('/');
+						switch (parts[0]) {
+							case 'image':
+								content += '<img src="/img/icons/image.png" style="float:left;width:32px;height:32px;" /> ';
+								break;
+							case 'video':
+								content += '<img src="/img/icons/video.png" style="float:left;width:32px;height:32px;" /> ';
+								break;
+							case 'audio':
+								content += '<img src="/img/icons/audio.png" style="float:left;width:32px;height:32px;" /> ';
+								break;
+						}
+						content += '<div style="margin-left:40px;font-weight:bold;">'+file.name+'</div>';
+						content += '<div style="margin-left:40px;">'+file.type+' - '+file.size+' bytes</div>';
+						
+						var kill = $('<a href="#" class="delete">Remove</a>')
+							.click(function(){
+								$(this).closest('div.upload').remove();
+								return false;
+							});
+						
+						item.html(content);
+						item.append(kill);
+						$('div#uploads').append(item);
+					}
+					old_overlay = $('div.overlay');
+					if (old_overlay) {
+						old_overlay.hide();
+					}
+				}
+				, onAllComplete: function(){
+					if (old_overlay) {
+						old_overlay.remove();
+					}
+				}
+				/** /
+				, progress: function(file, percent){
+					if (event.lengthComputable) {
+						var percentComplete = event.loaded / event.total;
+					}
+				}
+				/**/
+			};
+			$('input#input').droploader(upload_config);
+			
+			$('input#upload').live('click', function(){
+				var overlay = $('<div />')
+					.addClass('overlay')
+					.click(function(){
+						$(this).remove();
+					});
+				
+				var dialog = $('<div />')
+					.addClass('dialog')
+					.click(function(e){
+						e.stopPropagation();
+					});
+				
+				var file = $('<input />')
+					.attr('type', 'file')
+					.attr('name', 'upload');
+				
+				dialog.append('<h1>Upload a file</h1>');
+				dialog.append(file);
+				
+				overlay.append(dialog);
+				$('body').append(overlay);
+				
+				file.uploader(upload_config);
+				console.log(upload_config);
+			});
 		});
 		</script>
 	</head>
 	<body>
 		<table id="log"></table>
-		<form>
-			<table>
+		<form id="controls">
+			<div id="uploads"></div>
+			<div id="messagebar">
+				<div id="buttons">
+					<input type="button" id="upload" value="Upload" />
+					<input type="submit" id="send" value="Send" />
+				</div>
+				<div id="text">
+					<input type="text" id="input" />
+				</div>
+			</div>
+			<!--
+			<table id="messagebar">
 				<tr>
 					<td style="padding-right:10px;"><input type="text" id="input" /></td>
-					<td style="width:50px;padding-right:10px;"><input type="submit" value="Send" /></td>
+					<td style="width:50px;"><input type="button" id="upload" value="Upload" /></td>
+					<td style="width:50px;padding-right:10px;"><input type="submit" id="send" value="Send" /></td>
 				</tr>
 			</table>
+			-->
 		</form>
 	</body>
 </html>

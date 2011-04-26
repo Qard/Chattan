@@ -18,3 +18,9 @@ module.exports.crypto = {
 	mode: 'aes-256-cbc'
 	, key: 'lI7LWmKdCBbfTFbqMxcgR6glyNBL52T9+kcL4YXQVs0='
 }
+
+module.exports.aws = {
+	key: 'AKIAI6FOHDDDFDVWFJNQ'
+	, secret: '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'
+	, bucket: 'chattan'
+};

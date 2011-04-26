@@ -12,5 +12,6 @@
     "cradle": "*"
     , "express": "*"
     , "socket.io": "*"
+    , "knox": "*"
   }
 }
