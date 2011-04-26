@@ -363,7 +363,12 @@ socket.on('connection', function(client){
 						}
 						
 						// Construct message.
-						var msg = 'There are many text filters to convert URLs to embedded content, including:';
+						var msg = [
+							'NEW FEATURE: Uploads! You can now upload files to Chattan'
+							, 'by either clicking the upload button or dropping a file'
+							, 'onto the message bar at the bottom of the screen.'
+						].join(' ');
+						msg += 'There are many text filters to convert URLs to embedded content, including:';
 						msg += '<ul><li>'+filters.join('</li><li>')+'</li></ul>';
 						msg += '<br />'+list.join('<br />');
 						
