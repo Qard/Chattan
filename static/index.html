@@ -42,222 +42,8 @@
 			// Connect.
 			socket.connect();
 			
-			// Simple video service filter list. Intended to be added to.
-			var vid_filters = {
-				youtube: {
-					reg: /(^| )http(s)?:\/\/(www\.)?youtube\.com\/watch\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
-					, url: 'http://www.youtube.com/v/{id}&amp;hl=en_US&amp;fs=1'
-					, id: 'v'
-				}
-				, vimeo: {
-					reg: /(^| )http(s)?:\/\/(www\.)?vimeo\.com\/[\S]+($|(?![ ]))?/mig
-					, url: 'http://vimeo.com/moogaloop.swf?clip_id={id}&amp;server=vimeo.com&amp;show_title=1&amp;show_byline=1&amp;show_portrait=0&amp;color=&amp;fullscreen=1'
-				}
-				, google: {
-					reg: /(^| )http(s)?:\/\/video\.google\.com\/videoplay\?([\S]*)?docid=([\S]+)($|(?![ ]))?/mig
-					, url: 'http://video.google.com/googleplayer.swf?docid={id}&hl=en&fs=true'
-					, id: 'docid'
-				}
-				, facebook: {
-					reg: /(^| )http(s)?:\/\/(www\.)?facebook\.com(\/)?\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
-					, url: 'http://www.facebook.com/v/{id}'
-					, id: 'v'
-				}
-				, myspace: {
-					reg: /(^| )http(s)?:\/\/vids\.myspace\.com(\/)?(index\.cfm)?\?([\S]*)?videoid=([\S]+)($|(?![ ]))?/mig
-					, url: 'http://mediaservices.myspace.com/services/media/embed.aspx/m={id},t=1,mt=video'
-					, id: 'videoid'
-				}
-				, megavideo: {
-					reg: /(^| )http(s)?:\/\/(www\.)?megavideo\.com(\/)?\?([\S]*)?v=([\S]+)($|(?![ ]))?/mig
-					, url: 'http://www.megavideo.com/v/{id}'
-					, id: 'v'
-				}
-				, dailymotion: {
-					reg: /(^| )http(s)?:\/\/(www\.)?dailymotion\.com\/video\/[\S]+($|(?![ ]))?/mig
-					, url: 'http://www.dailymotion.com/swf/{id}'
-				}
-			};
-			
-			// Generic video filter.
-			var video_filter = function(msg, regex, url, key){
-				// Find all instances that match the supplied regex.
-				var matches = msg.match(regex);
-				var temp = $('<div />').html(msg);
-								
-				// Iterate our matches.
-				for (var i in matches) {
-					(function(){
-						var match = $.trim(matches[i]);
-						// If a keyname has been supplied, we should use that.
-						if (key) {
-							// Grab id.
-							var regexS = "[\\?&(?:&amp;)]"+key+"=([^&#]*)";
-							var regex = new RegExp(regexS);
-							var parts = regex.exec(match);
-						
-						// Otherwise, just use everything after the last /
-						// Mainly used for Vimeo support.
-						} else {
-							var parts = match.split('/');
-						}
-						
-						// Make sure we've actually found our id.
-						if (parts && parts.length) {
-							// Collect id, and replace the {id} token in supplied url.
-							var id = parts[parts.length-1];
-							var new_url = url.replace('{id}', id);
-							var vid_id = 'video-'+id;
-							
-							// Replace message content.
-							msg = msg.replace(match, '<div class="video" id="'+vid_id+'"></div>');
-							
-							// Create placeholder div for our flash object.
-							temp.html(msg);
-							
-							// Generate the flash object code and replace the placeholder.
-							$('div#'+vid_id, temp).flash({
-								src: new_url
-								, width: 600
-								, height: 350
-								, allowscriptaccess: 'always'
-								, wmode: 'opaque'
-								, allowfullscreen: true
-							});
-							
-							msg = temp.html();
-						}
-					})();
-				}
-				
-				// Return our filtered results.
-				return msg;
-			};
-					
-			var filters = [
-				// Handle script removal.
-				function(str){
-					return str.toString().replace(/<\s*script[^>]*>[\s\S]*?<\/script>/mig,'');
-				}
-				// Handle inline-script removal.
-				, function(str){
-					str = str.toString().replace(/<\s*[^>]*href="javascript:[^>]*"[^>]*>[\s\S]*?<\/[^>]*>/mig, '');
-					// List of event types.
-					var onevents = [
-						// Mouse events
-						'onclick', 'ondblclick', 'onmousedown', 'onmousemove', 'onmouseout', 'onmouseover', 'onmouseup'
-						// Keyboard events
-						, 'onkeydown', 'onkeypress', 'onkeyup'
-						// Image events
-						, 'onabort'
-						// Form events
-						, 'onblur', 'onchange', 'onfocus', 'onreset', 'onselect', 'onsubmit'
-						// Body events
-						, 'onload', 'onunload'
-					];
-					// Watch for all event types.
-					for (var i in onevents){
-						var reg = new RegExp('<\s*[^>]*'+onevents[i]+'="(javascript)?[^>]*"[^>]*>[\\s\\S]*?<\/[^>]*>', 'gim');
-						str = str.replace(reg, '');
-					}
-					return str;
-				}
-				// Handle object/embed removal.
-				, function(str){
-					return str.toString().replace(/<\s*object[^>]*>[\s\S]*?<\/object>/mig,'').replace(/<\s*embed[^>]*>[\s\S]*?\/>/mig,'');
-				}
-				// Escape HTML
-				/*, function(str){
-					return str.toString().replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-				}*/
-				// Handle magiccards.info replacements.
-				, function(str){
-					str = str.replace(
-						/(?:^| )https?:\/\/(?:www\.)?magiccards.info\/([\S]+)?\/([\S]+)?\/([\S]+)?\.html(?:$|(?:?![ ]))?/mig
-						, '<a href="http://magiccards.info/$1/$2/$3.html"><img src="http://magiccards.info/scans/$2/$1/$3.jpg" /></a>'
-					);
-					return str;
-				}
-				// Handle image replacements.
-				, function(str){
-					str = str.replace(/(?: |^)((?:ht|f)tps?:\/\/[\S]+\.(?:jpg|gif|png))(?:$|(?:?![ ]))?/mig, '<a href="$1"><img src="$1" /></a>');
-					return str;
-				}
-				// Handle HTML5-Supported video replacements.
-				, function(str){
-					str = str.replace(
-						/(?:^| )((?:ht|f)tps?:\/\/[\S]+?\.(mp4|ogg|webm)(?:[\?&#]+[\S]?)?)(?:$|(?:?![ ]))?/mig
-						, [
-							'<video width="600" height="350" controls preload="none">'
-							, '<source src="$1" type="video/$2" />'
-							, '</video>'
-						].join('')
-					);
-					return str;
-				}
-				// Handle google maps replacements.
-				, function(str){
-					// TODO: Clean this up...It's pretty ugly.
-					var matches = str.match(/(^| )http(s)?:\/\/maps.google.com\/maps\?([\S]*)?(geocode|q)=(([^ ]+))?($|(?![ ]))?/g);
-					for (var i in matches) {
-						txt = $.trim(matches[i]);
-						if (txt) {
-							var reg_geocode = new RegExp("[\\?&(?:&amp;)]geocode=([^&#]*)");
-							var reg_q = new RegExp("[\\?&(?:&amp;)]q=([^&#]*)");
-							var parts_geocode = reg_geocode.exec(txt);
-							var parts_q = reg_q.exec(txt);
-							
-							if (parts_geocode || parts_q) {
-								str = str.replace(txt, '<iframe style="height:400px;border:none;width:600px;" src="http://maps.google.com/maps?q='+(parts_geocode[1] ? parts_geocode[1] : parts_q[1])+'&z=15&output=embed"></iframe>');
-							}
-						}
-					}
-					return str;
-				}
-				// Handle video service replacements.
-				, function(str){
-					// Loop through video filter list.
-					for (var i in vid_filters) {
-						var filter = vid_filters[i];
-						str = video_filter(
-							str
-							, filter.reg
-							, filter.url
-							, filter.id || null
-						);
-					}
-					return str;
-				}
-				// Handle PDF/PPT Viewer replacements.
-				, function(str){
-					str = str.replace(
-						/(^| )(http(s)?:\/\/[\S]+?\.(?:pdf|ppt)([\?&#]+[\S]?)?)($|(?![ ]))?/mig
-						, [
-							'<div class="inline-document"><iframe '
-							, 'src="http://docs.google.com/gview?url=$2&embedded=true" '
-							, 'style="width:600px; height:500px;" '
-							, 'frameborder="0"'
-							, '></iframe><br /><a href="$2">Download Document</a></div>'
-						].join('')
-					);
-					return str;
-				}
-				// Handle plain URL replacements.
-				, function(str){
-					str = str.replace(/( |^)((?:ht|f)tps?:\/\/[\S]+)($|(?![ ]))?/mig, '$1<a href="$2">$2</a>$3');
-					return str;
-				}
-				// Add target="_blank" to all a elements.
-				, function(str){
-					str = str.replace(/<\s*(a)([^>]*)>/mig, '<$1 $2 target="_blank">');
-					return str;
-				}
-			];
-			
 			var prev_ip = null;
 			var prev_message = null;
-			
-			var files = [];
 			
 			// Output message.
 			function output(str) {
@@ -280,60 +66,58 @@
 				var clean_ip = str.ip ? str.ip : '';
 				clean_ip = clean_ip.replace(/\./mig, '-');
 				
-				// Cycle through our filter list.
-				for (var i in filters){
-					str.message = filters[i](str.message);
-				}
-				
-				// Only post non-empty messages.
-				if ('' != str.message) {
-					// If same user, as last message,
-					// append to newest message block.
-					if (prev_ip == clean_ip) {
-						prev_message.append('<hr />'+str.message);
-					} else {
-						prev_ip = clean_ip;
+				// Do all our filtering using the Embedify API. :)
+				$.post('http://embedify.duostack.net/convert', {text:str.message}, function(data) {
+					// Only post non-empty messages.
+					if ('' != data) {
+						// If same user, as last message,
+						// append to newest message block.
+						if (prev_ip == clean_ip) {
+							prev_message.append('<hr />'+data);
+						} else {
+							prev_ip = clean_ip;
+							
+							// Generate some elements to contain our message data.
+							var userinfo = $('<div class="userinfo" />');
+							var message = $('<div class="message'+(clean_ip ? ' '+clean_ip : '')+'" />');
+							var row = $('<tr />').attr('class', str.sys ? 'sys-item' : 'item');
+							var td = $('<td />');
+							row.append(td);
+							
+							// Generate timestamp.
+							var date = new Date();
+							var hours = date.getHours();
+							var minutes = date.getMinutes();
+							var seconds = date.getSeconds();
+							hours = (hours >= 10) ? hours : '0'+hours;
+							minutes = (minutes >= 10) ? minutes : '0'+minutes;				
+							seconds = (seconds >= 10) ? seconds : '0'+seconds;
+							var time = hours+':'+minutes+':'+seconds;
+							
+							// Populate user info box.
+							var username = (
+								str.name
+								? ' - <span class="username'+(str.admin ? ' admin' : '')+'">'+str.name+'</span>'
+								: ''
+							);
+							var ip = str.ip ? ' - '+str.ip : '';
+							userinfo.html('<div class="user"><small>'+time+username+ip+'</small></div>');
+							
+							// Insert filtered message into our message element.
+							message.html(data);
+							td.append(userinfo).append(message);
+							log.append(row);
+							
+							prev_message = message;
+						}
 						
-						// Generate some elements to contain our message data.
-						var userinfo = $('<div class="userinfo" />');
-						var message = $('<div class="message'+(clean_ip ? ' '+clean_ip : '')+'" />');
-						var row = $('<tr />').attr('class', str.sys ? 'sys-item' : 'item');
-						var td = $('<td />');
-						row.append(td);
-						
-						// Generate timestamp.
-						var date = new Date();
-						var hours = date.getHours();
-						var minutes = date.getMinutes();
-						var seconds = date.getSeconds();
-						hours = (hours >= 10) ? hours : '0'+hours;
-						minutes = (minutes >= 10) ? minutes : '0'+minutes;				
-						seconds = (seconds >= 10) ? seconds : '0'+seconds;
-						var time = hours+':'+minutes+':'+seconds;
-						
-						// Populate user info box.
-						var username = (
-							str.name
-							? ' - <span class="username'+(str.admin ? ' admin' : '')+'">'+str.name+'</span>'
-							: ''
-						);
-						var ip = str.ip ? ' - '+str.ip : '';
-						userinfo.html('<div class="user"><small>'+time+username+ip+'</small></div>');
-						
-						// Insert filtered message into our message element.
-						message.html(str.message);
-						td.append(userinfo).append(message);
-						log.append(row);
-						
-						prev_message = message;
+						// Add message and auto-scroll.
+						var scroll = (($('body').scrollTop()+$(window).height()) >= ($(document).height()-100));
+						if (scroll) {
+							window.scrollBy(0, log.outerHeight());
+						}
 					}
-					
-					// Add message and auto-scroll.
-					var scroll = (($('body').scrollTop()+$(window).height()) >= ($(document).height()-100));
-					if (scroll) {
-						window.scrollBy(0, log.outerHeight());
-					}
-				}
+				});
 			}
 			
 			var submit = function(e){
@@ -477,7 +261,6 @@
 				$('body').append(overlay);
 				
 				file.uploader(upload_config);
-				console.log(upload_config);
 			});
 		});
 		</script>
